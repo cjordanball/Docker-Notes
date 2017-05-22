@@ -247,41 +247,60 @@
     ```
     docker commit 01b4af71324e cjordanball/debian:0.1.0
     ```
-    **Note**: the container\_ID is determined from running *docker ps -A*, and the repository name could be in my local registry as well as the DockerHub registry		
+    **Note**: the container\_ID is determined from running *docker ps -A*, and the repository name could be in my local registry as well as the DockerHub registry.
+
+#### Dockerfile Example
+1. A **Dockerfile** is a text file that contains the instructions necessary to assemble an image. Each instruction creates a new image layer.
+
+2. The Dockerfile must be named *Dockerfile* (with uppercase D), with no extension.
+
+
+3. The first line of the Dockerfile will tell what the base image is, and begins *FROM* (commands are not case-sensitive, but convention is to make them uppercase).
+    ```
+    FROM debian:jessie
+    RUN apt-get update
+    RUN apt-get install -y git
+    RUN apt-get install -y vim
+    CMD [include commands we want to run when the container starts
+    ```
+    The above Dockerfile will start with a Debian layer, then check for updates, then add git, then add the vim text editor.  In order to make it run, we use the **build** command.
+    
+    Note that the **-y** prompt is important in the commands included in the Dockerfile, because they will be running without any user input, so they will have to automatically answer "yes" to any questions asked in the process of installing.
+
+4. The **build** command requires a path to the **build context**.  When the build starts, the docker client packs all the files in the Build Context into a tarball, then transfers that tarball file to the daemon.  Also, by default, Docker searches for the Dockerfile in the Build Context path.  If the Dockerfile is not there, one can specify its location with the **-f** option.
+    ```
+    docker build -t cjordanball/dockbuilddebian ./directory
+    ```
+    The **-t** flag tags the image with the given name:tag.  
+
+
+5. In performing the build, for each step Docker creates a temp container, adds the next layer, then closes that container and opens a new one for the next step.
+
+#### Additional Dockerfile
+1. **Chaining Run Instructions:** As noted above, for each RUN instruction in the Dockerfile, the *build* command will create a new Docker temporary container and image. It is more efficient to have a single RUN command chaining together multiple steps. For the above example, we can chain the *apt-get update* and *apt-get install* commands, and then chain the items to install, as follows:
+    ```
+    FROM debian:jessie
+    RUN apt-get update && apt-get install -y \
+			git \
+			vim
+
+
 ::: danger
 Rest here
 ::::
 ####Using a Dockerfile
 
-1.	A **Dockerfile** is a text file that contains the instructions necessary to assemble an image. Each instruction creates a new image layer.
 
-2.	The Dockerfile must be named *Dockerfile*, with no extension.
 
-3.	The first line of the Dockerfile will tell what the base image is, and begins *FROM* (commands are not case-sensitive, but convention is to make them uppercase).
 
-		FROM debian:jessie
-		RUN apt-get update
-		RUN apt-get install -y git
-		RUN apt-get install -y vim
+
 		
-	The above Dockerfile will start with a debian layer, then check for updates, then add git, then add the vim text editor.  In order to make it run, we use the **build** command.
-	
-4.	The *docker build* command requires a path to the **Build Context**.  When the build starts, the docker client packs all the files in the Build Context into a tarball, then transfers that tarball file to the daemon.  Also, by default, Docker searches for the Dockerfile in the Build Context path.  If the Dockerfile is not there, one can specify its location with the **-f** option.
-	
-		docker build -t cjordanball/dockbuilddebian ./directory
-		
-	The **-t** flag tags the image with the given name:tag.
 
-5.	In performing the build, for each step Docker creates a temp container, adds the next layer, then closes that container and opens a new one for the next step.
+
 
 ####More Dockerfile
 
-1.	**Chaining Run Instructions:** For each RUN instruction in the Dockerfile, the *build* command will create a new Docker temporary container and image.  It is more efficient to have a single RUN command chaining together multiple steps.  For the above example, we can chain the *apt-get update* and *apt-get install* commands, and then chain the items to install, as follows:
 
-		FROM debian: jessie
-		RUN apt-get update && apt-get install -y \
-			git \
-			vim
 
 2.	**Put Multi-Line Arguments in Alphabetical Order:** This will make it easier to avoid unnecessary duplication.
 
