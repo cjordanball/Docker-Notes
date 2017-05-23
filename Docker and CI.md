@@ -140,7 +140,7 @@
 
 3. Note, however, that this will start everything up in detached mode. To connect the container, follow the start command with the **attach** command:
     ```
-    dockeer start [container id] && docker attach [container id]
+    docker start [container id] && docker attach [container id]
     ```
 
 #### exit
@@ -150,6 +150,12 @@
     ```
     Once a container has run and exited, it remains in the list of containers, until removed.
 
+#### kill
+1. To kill one or more running containers (for example, one running in background that we can't get to), type the following at the command line:
+    ```
+    docker kill [container ids]
+    ```
+    
 #### ps, ps -a
 1. To see a list of all **currently running** Docker containers, enter the following at the command line:
     ```
@@ -198,6 +204,11 @@
     docker logs [container ID]
     ```
 
+#### exec
+1. The **exec** command allows us to run commands inside a running container. For example, the following allows us to run the *bash* command in our container:
+    ```
+    docker exec -it [container id /bin/bash 
+    ```
 
 ### Images
 
@@ -276,171 +287,219 @@
 
 5. In performing the build, for each step Docker creates a temp container, adds the next layer, then closes that container and opens a new one for the next step.
 
-#### Additional Dockerfile
+## Detail Dockerfile
 1. **Chaining Run Instructions:** As noted above, for each RUN instruction in the Dockerfile, the *build* command will create a new Docker temporary container and image. It is more efficient to have a single RUN command chaining together multiple steps. For the above example, we can chain the *apt-get update* and *apt-get install* commands, and then chain the items to install, as follows:
     ```
     FROM debian:jessie
+    RUN apt-get update && apt-get install -y git vim
+    ```
+
+2. **Put Multi-Line Arguments in Alphabetical Order:** This will make it easier to avoid unnecessary duplication. To make multi-line arguments, use the "\" to escape the newline command:
+    ```
+    FROM debian:jessie
     RUN apt-get update && apt-get install -y \
-			git \
-			vim
+        git \
+        python \
+        vim
+    ```
+
+3. **CMD Instruction:** This is another common instruction in the Dockerfile, and it tells Docker what command should be run when the container starts up (**not** when the image is built). If no CMD instruction is given, Docker will use the default command defined in the base image.  Note, however, that this is merely a default, and a different command can be set when the container is created, using the *run* command.
+
+    The CMD instruction should be in *shell form*, or in *exec formU*, with an array containing the command, followed by any arguments.  For example:
+    ```
+    CMD ["echo", "hello world"]
+    
+    //could be: CMD echo "hello world"
+    ```
+4. Another reason to chain the *apt-get update* instruction with *apt-get install* instruction has to do with the **Docker cache.**  If a build step has been performed previously, the next time *build* is called, Docker will used the cached version of images when the commands are the same. This is faster, but can result in an image getting out-of-date. For example, if an image is made today, and the debian operating system is updated tomorrow, then our image will get out-of-date if new builds keep using the cached OS.
+
+5. An alternative is to turn off the use of cache, as follows:
+    ```
+    docker build -t cjordanball/debian . --no-cache=true
+    ```
+    **Note:**: Even the *RUN apt-get update* uses a cached imaage if it is the command hasn't been chaged and caching is in effect.
+
+6. 
+
+
+### Summary of Dockerfile Instructions
+
+#### FROM
+1. The first instruction in a Dockerfile, it tells us where to start; typically with the setting of an operating system.
+
+#### RUN
+1. The basic command telling Dockerfile to execute whatever code follows it.
+
+#### CMD
+1. Tells Docker what command should be run when the container starts up; otherwise, the default command will run. Note, however, that the user could provide a different command in starting the container.
+
+#### EXPOSE
+1. Tells Docker which port we want our app to expose to the outside. We can map this onto a different port in our *run* command later, if we wish.
+
+#### COPY
+1. In addition to installing operating systems and utilities to our image, we also will want to copy in files or directories of text, code, images, *etc*. Of course, we need to provide instruction of what files to copy, and where they are located.
+    ```
+    COPY testText.txt /scr/testText.txt
+    ```
+    The command above will find the testText.txt file in the **build context directory** and place it in the designated location. **It will build the directory structure if not present.** 
+
+#### ADD
+1. ADD is a more general case of the COPY instruction. It can do other things; for example, it can download a file from a remote location and add it to the image or automatically unpack compressed files. **COPY** is preferred, unless **ADD** is necessary.
+
+
+#### WORKDIR
+1. The **WORKDIR** instruction sets the working directory for any RUN, COPY, CMD, ENTRYPOINT, and ADD instructions that follow it. It can be used multiple times, and if a relative path is provided, then it will be relative to the path of the previous WORKDIR path.
+
+2. If the directory does not yet exist, it will be created, **even if it is not used thereafter.**
+
+## Using Docker Hub
+1. We can store images on Docker Hub, which operates in a manner similar to Github.
+
+
+2. To update the name of an image, we can use the **tag** command, as follows:
+    ```
+    docker tag [image ID] [new name:tag]
+    ```
+		
+3. To push an image to Docker Hub, do the following:
+
+    a. Make sure the image has a name in the form of:
+    ```
+    acctUsername/imageName
+    ```
+    for example:
+    ```
+    cjordanball/node-web-app
+    ```
+    b. Next, we should type from the command line:
+    ```
+    docker login --username=cjordanball
+    ```
+    where I am using my username. Then I enter my password.  After that, to send an image to Docker Hub, I can use the command:
+    ```
+    docker push [image name]/[tag]
+    ```
+
+## Example: Dockerize a Simple Node App
+
+### Create a Simple Node App
+1. First, we will create a basic "Goodbye, Cruel World" application using Express, with the following *package.json* file:
+    ```json
+    {
+        "name": "docker_app",
+        "version": "0.0.1",
+        "description": "Node.js on Docker",
+        "author": "CJB3",
+        "main": "index.js",
+        "scripts": {
+            "start": "nodemon index.js"
+        },
+        "dependencies": {
+            "express": "^4.13.3"
+        },
+        "devDependencies": {
+            "nodemon": "^1.11.0"
+        }
+    }
+    ```
+
+2. Next, we create an *index.js* file, which uses Express to handle two routes:
+    ```javascript
+    'use strict';
+    const express = require('express');
+
+    //constants
+    const PORT = 3142;
+
+    //our app
+    const app = express();
+    app.get('/', (req, res) => {
+        console.log('root');
+        res.send('Goodbye, Cruel World!');
+    });
+
+    app.get('/test', (req, res) => {
+        res.send(`<h1>This is the test of tests!</h1>`);
+    })
+
+    app.listen(PORT);
+    console.log(`Running on http://localhost:${PORT}`);
+    ```
+
+3. Next, we create a **Dockerfile** for the project, to tell Docker how to assemble our image:
+
+    a. We first designate the version of Node we want to run:
+    ```
+    FROM node:7
+    ```
+    b. Next, we can create a directory to hold the app and designate it as the working directory (no need to actuall use *mkdir*, *WORKDIR* will create the necessary pathway:
+    ```
+    WORKDIR /usr/src/app
+    ```
+    c. Next, copy the *package.json* file into the working directory and then run *npm install*
+    ```
+    COPY package.json /usr/src/app/
+    RUN npm install
+    ```
+    **Note:** It is a great idea to COPY the *package.json* file and then RUN npm install on it *before* copying the rest of the application folder. That way, the cache can be used on rebuilds for the node modules.
+    
+    e. Next, we can add an *admin* user and specify it as the user, so that we can be sure we are not running the app server as the **root** user.
+    ```
+    RUN useradd -ms /bin/bash admin
+    USER admin
+    ```
+		
+    d. Next, send our source code ot the Docker image using COPY:
+    ```
+    COPY . /usr/src/app
+    ```
+
+    e. Next, use the EXPOSE instruction to have our port mapped:
+    ```
+    EXPOSE 3142
+    ```
+    
+    f. Finally, define the start-up command to run:
+    ```
+    CMD ["npm", "start"]
+    ```
+
+4. Create a **.dockerignore** file to tell docker what not to copy:
+    ```
+    node_modules
+    npm-debug.log
+    ```
+
+5. At this point, we can create our image:
+    ```
+    docker build -t cjordanball/node_app .
+    ```
+
+6. To run the image, we must map the port to the one exposed by Docker (even if it is the same):
+    ```
+    docker run -p 8000:3142 -d cjordanball/node_app
+    ```
+    
+7. We can see the output of the application by running the *docker logs* command:
+    ```
+    docker logs [container ID]    
+    ```
+
+		
+8. Also, when we create the container with Node from the Docker Hub, we are actually getting Node running in a Linux OS.  We can go into the file system with the following command:
+    ```
+    docker exec -it cjordanball/node_app /bin/bash
+    ```
+    
+    
+
 
 
 ::: danger
 Rest here
 ::::
-####Using a Dockerfile
 
 
-
-
-
-		
-
-
-
-####More Dockerfile
-
-
-
-2.	**Put Multi-Line Arguments in Alphabetical Order:** This will make it easier to avoid unnecessary duplication.
-
-3.	**CMD Instruction:** This is another common instruction in the Dockerfile, and it tells Docker what command should be run when the container starts up.  If no CMD instruction is given, Docker will use the default command defined in the base image.  Note, however, that this is merely a default, and a different command can be set when the container is created, using the *run* command.
-
-4.	The CMD instruction should be in exec form, with an array containing the command, followed by any arguments.  For example:
-
-		CMD ["echo", "hello world"]
-		
-5.	Another reason to chain the *apt-get update* instruction with *install* instructions has to do with the **Docker cache.**  If a build step has already been performed, Docker will not redo it in a subsequent build, but will use the cached version of that step. This makes the build much faster, but could lead to the version falling behind and not getting updated, if the update command is left on its own.
-
-6.	An alternative is to turn off the use of cache, as follows:
-
-		docker build -t cjordanball/debian . --no-cache=true
-
-7.	The **COPY** instruction copies new files or directories from the Build Context and adds them to the file system of the container. So, for example, if we have a file named *test.txt* in our Build Context directory, and want to have it in our container at */src/test.txt*, we should place the following in the Dockerfile:
-
-		COPY abc.txt /src/abc.txt
-		
-8.	The COPY instruction is a special, simple case of the **ADD** instruction, which allows us to do other things, such as download a file from a remote location and add it to the image or automatically unpack compressed files.  However **COPY** is preferred, unless **ADD** is necessary.
-
-9.	The **WORKDIR** instruction sets the working directory for any RUN, COPY, CMD, ENTRYPOINT, and ADD instructions that follow it.
-
-####Docker Hub
-
-1.	We can store images on Docker Hub, which operates in a manner similar to Github.
-
-2.	To update the name of an image, we can use the **tag** command, as follows:
-
-		docker tag [image ID] [new name:tag]
-		
-3.	To push an image to Docker Hub, it must have a name in the form of:
-
-		acctUsername/imageName
-		//for example: cjordanball/node-web-app
-		
-4.  Then, we should type from the command line:
-
-		docker login --username=cjordanball
-		
-	where I am using my username. Then I enter my password.  After that, to send an image to Docker Hub, use the command:
-	
-		docker push [image name]/[tag]
-
-
-###Example: Dockerize a Simple Node Application
-
-####Create a Simple Node App
-
-1.  First, we will create a basic "Goodbye, Cruel World" application using Express, with the following *package.json* file:
-
-		{
-  			"name": "docker_app",
- 	 		"version": "0.0.1",
-  			"description": "Node.js on Docker",
-  			"author": "CJB3",
-  			"main": "index.js",
-  			"scripts": {
-    			"start": "nodemon index.js"
-  			},
-  			"dependencies": {
-   		 		"express": "^4.13.3"
-  			},
-  			"devDependencies": {
-    			"nodemon": "^1.11.0"
-  			}
-		}
-
-2.	Next, we create an *index.js* file, which uses Express to handle two routes:
-
-		'use strict';
-		const express = require('express');
-
-		//constants
-		const PORT = 3142;
-
-		//our app
-		const app = express();
-		app.get('/', (req, res) => {
-  			console.log('root');
-  			res.send('Goodbye, Cruel World!');
-		});
-
-		app.get('/test', (req, res) => {
-  			res.send(`<h1>This is the test of tests!</h1>`);
-		})
-
-		app.listen(PORT);
-		console.log(`Running on http://localhost:${PORT}`);
-		
-3.	Next, we create a Dockerfile for the project, to tell Docker how to assemble our image:
-
-	a.	We first designate the version of Node we want to run:
-	
-		FROM node:7
-		
-	b.	Next, we can create a directory to hold the app and designate it as the working directory:
-	
-		RUN mkdir -p /usr/src/app
-		WORKDIR /usr/src/app
-		
-	c.	Next, copy the *package.json* file into the working directory and then run *npm install*
-	
-		COPY package.json /usr/src/app/
-		RUN npm install
-	
-	**NOTE:** It is a great idea to COPY the *package.json* file and then RUN npm install on it *before* copying the rest of the application folder.  That way, the cache can be used on rebuilds for the node modules.
-	
-	d.	Next, send our source code ot the Docker image using COPY:
-	
-		COPY . /usr/src/app
-		
-	e.	Next, use the EXPOSE instruction to have our port mapped:
-	
-		EXPOSE 3142
-		
-	f.	Finally, define the start-up command to run:
-	
-		CMD ["npm", "start"]
-
-4.	Create a **.dockerignore** file to tell docker what not to copy:
-
-		node_modules
-		npm-debug.log
-		
-5.	At this point, we can create our image:
-
-		docker build -t cjordanball/node_app .
-		
-6.	To run the image, we must map the port to the one exposed by Docker (even if it is the same):
-
-		docker run -p 8000:3142 -d cjordanball/node_app
-		
-7.	We can see the output of the application by running the *docker logs* command:
-
-		docker logs [container ID]
-		
-8.	Also, when we create the container with Node from the Docker Hub, we are actually getting Node running in a Linux OS.  We can go into the file system with the following command:
-
-		docker exec -it cjordanball/node_app /bin/bash
 
 ###Linking Containers
 
