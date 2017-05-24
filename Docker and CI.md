@@ -798,111 +798,308 @@
     ```
     If *docker-machine* is correctly installed, then it will show a list of virtual machines.  If not, then go to Docker.com and install docker-machine. 
 
-3. To create a docker-machine VM, use the following command:
+3. To create a docker-machine VM, use the **docker-machine create** command, as follows (the "name of VM" means the name we wish to give it"):
     ```
     docker-machine create --driver digitalocean 
       --digitalocean-access-token [personal access token]
       [name of the VM]
     ```
     This can take a few minutes, for Docker to provision the Virtual Machine.
+    
+    Also, note that we can also create a docker-machine for AWS, or Azure, or other services.
 
 4. To display the commands needed to set up the Docker client, enter the following at the command line:
     ```
     docker-machine env [name of the VM]
- 
+    ```
+    **Note**: at this point, we have established a virtual machine in which Docker is running, but we have done nothing to connect it to our Docker client, where our app resides.
 
-5. Run the suggested command to configure the shell:
+5. Run the suggested command to configure the shell to connect it to our Docker client:
     ```
     eval $(docker-machine env [VM name]
     ```
 
-6. We can then get information about the new VM by typinf at the command line:
+6. We can then get information about the new VM by typing at the command line:
     ```
     docker info
     ```
 		
-7. Ncommext, copy the *docker-compose.yml* file into a new root-level file, **prod.yml**.  Then change our application service *build* instruction to an *image* instruction, citing our Docker Hub image as the source of the application image.  For example, change:
+7. Next, copy the *docker-compose.yml* file into a new root-level file, **prod.yml**.  Then change our application service *build* instruction to an *image* instruction, citing our Docker Hub image as the source of the application image.  For example, change:
+    ```yaml
+    # docker-compose.yml
+    version: '2'
+      services:
+        dockerapp:
+          build: .
+          ports:
+            - "5000:5000"
 
-		//docker-compose.yml
-		version: '2'
-		services:
-  			dockerapp:
-    			build: .
-    			ports:
-      				- "5000:5000"
+        redis:
+          image: redis:3.2.0
+    ```
 
-  			redis:
-    			image: redis:3.2.0
+    to
 
-	to
+    ```yaml
+    version: '2'
+    services:
+      dockerapp:
+        image: cjordanball/dockerapp
+        ports:
+          - "5000:5000"
 
-		version: '2'
-		services:
-  			dockerapp:
-    			image: cjordanball/dockerapp
-    			ports:
-      				- "5000:5000"
+      redis:
+        image: redis:3.2.0
+    ```
 
-  			redis:
-    			image: redis:3.2.0
+8. **FINALLY**: To deploy our app, enter at the command line:
+    ```
+    docker-compose -f prod.yml up -d  
+    ```
+    This is our *docker-compose* starting command, and is referring to the **prod.yml** file for instructions as to the services. As usual, the **-d** flag causes the containers to run in the background.
     
+    **-f**: The default file to tell docker-compose what to do is the *docker-compose.yml* file. With the -f flag, we can designate another file, such as the prod.yml file.
+
+9. Now, if we run the *docker-machine ls* command, we will see our new virtual machine listed, with a Driver of "digitalocean" and an URL:port. At this point the site should be up and running in the cloud, and we should be able to access it at the listed URL, but at the port we have assigned it.
+
+10. Note that there are lots of options available for our digital-ocean VM. Google "docker digital ocean driver" to see available options.
+
+### Dealing With Multiple Environment .yml Files
+1. At this point, we have a *docker-compose.yml* file for the development environment and a *prod.yml* file for use in production, which have a lot of common code.  We can place the common code into a single *.yml* file and use the **extends** property to bring in the common portions to each file. For example, this might be the *common.yml* file:
+    ```yaml
+    # common.yaml
+    version: '2'
+    services:
+      dockerapp:
+        ports:
+          - "5000:5000"
+
+      redis:
+        image: redis:3.2.0
+    ```
+
+2. In our *docker-compose.yml*, we can import this code as follows:
+    ```yaml
+    # docker-compone.yaml
+    version: '2'
+    services:
+      dockerapp:
+        extends:
+          file: common.yml
+          service: dockerapp
+        build: .
+
+      redis:
+        extends:
+          file: common.yml
+          service: redis
+    ```
+3. And in our production file, we will have:
+    ```yaml
+    # prod.yaml
+    version: '2'
+    services:
+      dockerapp:
+        extends:
+          file: common.yml
+          service: dockerapp
+        image: jleetutorial/dockerapp
+
+      redis:
+        extends:
+          file: common.yml
+          service: redis
+    ```
+
+    Obviously, in this simple example we end up with more code than we would have had without using *extends*, but in more developed situations it can prevent a lot of duplicated code.
+
+## Docker Swarm
+
+### Introduction
+1. This section deals with scaling Docker for large applications, where we could have hundreds of containers, on multiple hosts. **Docker Swarm** is a tool that clusters many Docker Engines and schedules containers. It decides which host on which to run a container, based on our scheduling methods.
+
+2. As illustrated in the accompanying drawing, a Docker Daemon runs on every remote host in the cloud. Each one communicates with the **Docker Swarm manager**. The Swarm Manager keeps track of the status of all the nodes in our cluster. The **Docker Client**, instead of dealing with the nodes, communicates only with the Swarm Manager.
+
+3. Docker Swarm sends containers to the nodes, dividing up the work among them.
+
+4. We can also point multiple clients to the same Swarm Manager, so multiple users can share a swarm cluster.
+
+### Setting Up the Swarm
+1. First, we need to set up environment variables from the command line:
+    ```
+    export DIGITALOCEAN_ACCESS_TOKEN=[our token]
+    export DIGITALOCEAN_PRIVATE_NETWORKING=true
+    export DIGITALOCEAN_IMAGE=debian-8-x64
+    ```
+2. **Service Discovery** is a key component of most distributed systems and service oriented architectures. For Docker Swarm, this means keeping track of the state of each node in the cluster. This is done with a **key/value store**, where each node is registered, so the Swarm Manager can see the state of each node through the store.
+
+3. The **key/value store** is maintained in a service, such as *Consul* or *Apache Zookeeper*. Here, we will follow along with Consul.
+
+4. Deploying the Docker app on the Swarm cluster will involve the following:
+
+    a. Provision a Consul machine and run the Consul server on it as a key/value store for discovering services,
     
+    b. Provision a Docker Swarm master node,
+    
+    c. Provision a Docker Swarm slave node,
+    
+    d. Define the overlay network to support multi-host networking,
+    
+    e. Deploying our Docker app services on the Swarm cluster with **Docker Compose**.
+    
+#### Step One - Create Consul Machine
+1. Run the following command to set up a digital ocean docker machine for Consul:
+    ```
+    docker-machine create -d digitalocean consul
+    ```
+    **Note**: This will be used by the Swarm, but will not be part of the Swarm itself.
+
+2. We can access the machine using ssh by:
+    ```
+    docker-machine ssh [name of machine]
+    ```
+
+3. We can view the networking details of the docker-machine using the **ifconfig** command, which is used to configure, or view the configuration of, a network interface. We should see four entries:
+
+    a. **docker0** - the usual bridge network,
+    
+    b. **eth0** - allows inbound and outbound access to the entire internet,
+    
+    c. **eth1** - allows private networking among hosts in the same data center,
+    
+    d. **local** - the loopback
+
+    We will use the eth1 network, so we share the info in Consul only with our private network. We should go ahead and set an env variable with the private IP address:
+    ```
+    export KV_IP=[the address]
+    ```
+4. Then, we connect our docker client to this new host:
+    ```
+    eval $(docker-machine env consul)
+    ```
+5. Next, to start up the key/value store service, we can run a command as follows:
+    ```
+    docker run -d -p ${KV_IP}:8500:8500 --restart always 
+        gliderlabs/consul-server -bootstrap
+    ```
+    **-p**: we can provide it an optional parameter of an IP addreess as an initial value, which we are doing through the variable we named
+    
+    **restart**: a command to tell when the server should automatically restart if it goes down, we tell it to always restart
+    
+    **gliderlabs/consul-server** is a key/value service we are going to use from DockerHub
+    
+    **--bootstrap**: a command for the *gliderlabs/consul-server*. 
+
+#### Step 2 - Provision a Master Node
+1. Note first that we will need our environment variables from before, so check to see if they are still available with *echo*.
+
+2. The **master node** is what we also refer to as the **swarm manager**. We need to set it up as the master node.
+
+3. The command for setting up the master node vm:
+    ```
+    docker-machine create -d digitalocean --swarm --swarm-master 
+    --swarm-discovery="consul://${KV_IP}:8500" --engine-opt=
+    "cluster-store=consul://${KV_IP}:8500" --engine-opt=
+    "cluster-advertise=eth1:2376" master
+    ```
+    **--swarm**: lets docker-machine know that this is a part of a swarm (which will consist of a **master** and an arbitrary number of ordinary nodes.
+    
+    **--swarm-master**: alerts the fact that this is the master node, or swarm manager.
+    
+    **--swarm-discovery**: assigned a value that tells the IP and port to access the key-value store.
+    
+    **engine-opt** allows us to set option flags. The two present here are: i) **--cluster-store**, which key/value store to use for cluster coordination, and **--cluster-advertise", which provides an address that the Docker daemon should advertise as connectible to the cluster 
+
+    **master**: the name of the master node
+   
+#### Step 3 - Provision One or More Slave Nodes
+1. The commands are very similar to those used to create the master node:
+    ```
+    docker-machine create -d digitalocean --swarm 
+    --swarm-discovery="consul://${KV_IP}:8500" --engine-opt=
+    "cluster-store=consul://${KV_IP}:8500" --engine-opt=
+    "cluster-advertise=eth1:2376" slave01
+    ```
+    Just remove the --swarm-master flag, and chenge the name of the node.
+    
+2. Note that the master node is also a slave node, it occupies both roles.  It can run containers itself, as well as manage the other nodes.
+
+#### Step 4 - Support Multi-Host Networking
+1. This step is handled by modifying our *docker-compose* yaml file.
+
+2. First, we need to make sure that our services are started in the correct order. This is done by adding a "depends_on" property to services that have dependencies. In the following example, the "dockerapp" service depends on redis, so redis should be opened first:
+    ```yaml
+    version: '2'
+    services:
+      dockerapp:
+        extends:
+          file: common.yml
+          service: dockerapp
+        image: jleetutorial/dockerapp
+        depends_on:
+          - redis
+
+      redis:
+        extends:
+          file: common.yml
+          service: redis
+    ```
+3. Then, in the yaml file, we must add a "networks" property to each service, so that we can add the **overlay network**. In the example below, this will be the "myNet".
+    ```yaml
+    version: '2'
+    services:
+      dockerapp:
+        extends:
+          file: common.yml
+          service: dockerapp
+        image: jleetutorial/dockerapp
+        environment:
+          - constraint:node=master
+        depends_on:
+          - redis
+        networks:
+          - myNet
+
+      redis:
+        extends:
+          file: common.yml
+          service: redis
+        network:
+          - myNet
+    networks:
+      myNet:
+        driver: overlay   
+    ```
+    **Note**: We have also added a "networks" property to the root of the yaml file. We added the **myNet** network, and defined it as an **overlay** network, which can allow containers in different hosts to communicate.
+
+#### Deploy with Docker Compose
+1. At this point, all we need to do is go to the directory of our app and run:
+    ```
+    docker-compose -f prod.yml up -d
+    ```
+2. The swarm manager has a default to spread the services among the available nodes. We can set the node to be used for a service, however, within the *docker-compose.yml* file, as follows:
+    ```
+    version: '2'
+    services:
+      dockerapp:
+        extends:
+          file: common.yml
+          service: dockerapp
+        image: jleetutorial/dockerapp
+        depends_on:
+          - redis
+        networks:
+          - myNet
+
+
+    ```
+
+
 ::: danger
 Rest here
 ::::
 
 
-
-
-
-
-
-
-
-
-
-		
-
-
-
-
-    			
-8.	To deploy our app, enter at the command line:
-
-		docker-compose -f prod.yml up -d
-		
-9.	**Note:** There are lots of options available for our digital-ocean VM.  Google "docker digital ocean driver" to see available options.
-
-####Dealing With Multiple Environment .yml Files
-
-1.	We have a *docker-compose.yml* file for the development environment and a *prod.yml* file for use in production, which have a lot of common code.  We can place the common code into a single *.yml* file and use the property **extends** to bring in the common portions to each file.  For example, this might be the *common.yml* file:
-
-		version: '2'
-		services:
-  			dockerapp:
-    			ports:
-      				- "5000:5000"
-
-  			redis:
-   	 			image: redis:3.2.0
-   	 			
-	In our docker-compose.yml, we can import this code as follows:
-	
-		version: '2'
-		services:
-  			dockerapp:
-    			extends:
-      				file: common.yml
-      				service: dockerapp
-    			build: .
-
-  			redis:
-    			extends:
-      				file: common.yml
-      				service: redis
-
-	Obviously, in this simple example we end up with more code than we would have had without using *extends*, but in more developed situations it can prevent a lot of duplicated code.
-	
 ###Testing		
 
 
