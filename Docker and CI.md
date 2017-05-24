@@ -426,7 +426,8 @@
     console.log(`Running on http://localhost:${PORT}`);
     ```
 
-3. Next, we create a **Dockerfile** for the project, to tell Docker how to assemble our image:
+### Create the Dockerfile
+1. Next, we create a **Dockerfile** for the project, to tell Docker how to assemble our image:
 
     a. We first designate the version of Node we want to run:
     ```
@@ -491,284 +492,336 @@
     docker exec -it cjordanball/node_app /bin/bash
     ```
     
-    
+## Linking Containers    
 
+### Introduction - Manual Linking
 
+1. The main use for docker container linking is in building an application with a microservice architecture, so that we are able to run many independent components in different containers.
 
-::: danger
-Rest here
-::::
+1. Docker containers can be linked, so that they can communicate with each other internally, without exposing a port. For example, we can have a web server in one container serving a single-page web app, and a NodeJS server in another container for our API, and then link them so that they can communicate.
 
+2. In our example, let's have a simple web-app in one container, which we can refer to as the *recipient*.  In another container, we will place Redis, an in memory data-storage service; we will refer to this container as the *source*.
 
-
-###Linking Containers
-
-####General - Manual Linking
-
-1.	Docker containers can be linked, so that they can communicate with each other internally, without exposing a port. For example, we can have a Data Server such as Redis in one container, and a web server in another container.  We can link them so they communicate.
-
-2.	In our example, let's have our application in one container, which we can refer to as the *recipient*.  In another container, we place Redis, and we refer to this container as the *source*.
-
-3.	As a first step, we will use the *run* command to create our redis container, giving it the name *redis*. The naming is necessary so that we have a reference to the container when we make our link.
-
-		//the second redis indicates the image
-		docker run -d --name redis redis:3.2.0 
-
-4.	Once we confirm that the Docker image is up and running, we build our application image, then use the *run* command to build the recipient container, as follows:
-
-		docker run -d -p 3142:3142 --link redis dockerapp:v0.0.3	
- The **--link redis** instruction links the container labelled *redis* to the new recipient container.
+3. As a first step, we will use the *run* command to create our redis container, giving it the name *redis*. The **naming is necessary** so that we have a reference to the container when we make our link.
+    ```
+    docker run -d --name redis redis:3.2.0 
+    ```
  
- 5.	If we look into the containers using the *exec* command, we see that, in the /etc/hosts file, an IP address is assigned to the *redis* container.
+5. Once we have the *redis* container running, and we have created an image of our recipient python app, we run the following command:
+    ```
+    docker run -d -p 5000:5000 --link redis dockerapp:v0.3
+    ```
+    **Note**: The **--link redis** instruction links the container labelled *redis* to the new recipient container. ""dockerapp:v0.3" is the name of the image on which we are creating our container.
 
-####Docker Compose
+6. When we use the link command, docker adds entries to the **/etc/hosts** file in the *recipient* file, assining an IP address to the source container name. We can see the same information by running *docker inspect* on the source container.
 
-1.	The above approach of manually linking containers would quickly become unwieldy as the number of containers involved grows. In order to keep track of everything, we can use a tool called **Docker Compose**. This allows us to run a single command to create and start all the services in our configuration.
+### Using Docker Compose
+1. The above approach of manually linking containers would quickly become unwieldy as the number of containers involved grows. In order to keep track of everything, and simplify our startup process, we can use a tool called **Docker Compose**. This allows us to run a single command to create and start all the services in our configuration.
 
-2.	We define all our services in a file entitled **docker-compose.yml**. Then we can start everything with a single command:
+2. As a first step, make sure **docker-compose** is installed by running at the command line:
+    ```
+    docker-compose version
+    ```
+    If not, go to the Docker page and follow the directions to download and install it.
 
-		docker-compose up
-		
-3.	When using Docker-Compose, linking is not required, because each service can communicate with each other service by name. As an example docker-compose.yml file:
-
-		version: '2'
-		services:
-    	  dockerapp:
-            build: .
-            ports:
-              - "5000:5000"
-            volumes:
-              - ./app:/app
-         redis:
-           image: redis:3.2.0
-
-	**Note:** The version should be '2.' This allows us to forgo linking.
-	
-	**Note:** Each service should get an entry.
-	
-	**Note:** The volumes allows us to direct the code to from the container to the host machine. It should be in the form *host directory : container directory*.  So, we should remove the *copy* instruction from the Dockerfile.
-	
-4.	When we run the *docker-compose up* command, we can attach the *-d* command to run it in the background.
-
-5.	To see the status of the containers being managed by docker-compose, we should run:
-
-		docker-compose ps
-		
-6.	We can also see information by the command:
-
-		docker-compose logs
-		
-	**NOTE:** Append the container name to the above command to see the output for a specific container.
-	
-	**NOTE:** Add the **-f** flag to have the log output as it continues to grow.
-
-7.	To stop all the running containers, without removing them:
-
-		docker-compose stop
-		
-8.	We can restart these containers again with either:
-
-		docker-compose start
-		docker-compose up
-		
-9.	If we make a modification to our code (such as in the Dockerfile), we cannot use *docker-compose up* to rebuild the container with the changes, because Docker will see the image already exists. To force a rebuild, use the command:
-
-		docker-compose build
-		
-###Testing with Docker
-
-1.	First, in the container, add the following line to the Dockerfile to add jasmine-node testing to our application:
-
-		RUN npm install -g jasmine-node
-		
-2.	In the application, create a *spec* folder and files containing the tests.
-
-3.	Make sure in the *package.json* file that we set our testing script:
-
-		"scripts": {
-			"test": "jasmine-node spec",
-			"start": "node index.js"
-		}
-	
-4.	Add a file to our project, *docker-compose.test.yml*, with the following content:
-
-		version: '2'
-		  services:
-		    bazoom:
-		      build: .
-		      ports:
-		        - "3000:3000"
-		      entrypoint: jasmine-node spec
-		
-5.	Run the tests with the following:
-
-		docker-compose -f docker-compose.test.yml up --build
-		
-6.	And remove the container from the list of dormant containers with:
-
-		docker-compost -f docker-compose.test.yml down
-		
-7.	An alternative is to use another command in docker-compose, **docker-compose run**.  This command causes a one-time execution of a given command on a given service:
-
-		docker-compose run [service name] [command]
-		
-###Continuous Integration with Docker
-
-1.	Once we are writing tests for our code, we can create a **continuous integration (CI)** process for our development. To do so, we will connect accounts in *GitHub*, *CircleCI*.
-
-2.	*Continuous Integration* is a software engineering practice in which discrete changes are immediately tested and reported as they are added to the main code base branch.
-
-3.	In a CI process, when a developer commits changes to a **version control system (VCS)** such as GitHub or BitBucket, the code goes to a Continuous Integration server, which is always listening for changes.  Upon detecting a change in the repository, it builds a new version, runs Unit Tests, and archives.  It may also push the new version to the staging or production server.
-
-4.	The first steps in this process are to set up a *GitHub* account and *CircleCI* account.
-
-5.	Next, got to *https://circleci.com*.  If we log in with our GitHub account, we will be connected to our GitHub repositories and can choose one for *CircleCI* to run on.
-
-	a.	Click on the "Add Projects" button on the left side of the page, and you will see the GitHub repositories of which you are a member. If there are more than one, choose the appropriate one, then choose the project you wish for CircleCI to follow (more than one costs $).
-	
-	b.	Click on the "Build Project" button of the repository you want to follow. Now, whenever commits are pushed to that repository, *CircleCI* will run through its paces on that branch.
-
-6.	In the root directory of our Git repository, we must set up a *circle.yml* file. This is where the instructions are to CircleCI to tell it what to do when a change is detected in the repository.
-
-7.	These are some of the parts of the *yml* file:
-
-	a.	The **machine** heading identifies the CircleCI server and services:
-	
-		machine:
-  			pre:
-    			- curl -sSL https://s3.amazonaws.com/circle-downloads/install-circleci-docker.sh | bash -s -- 1.10.0
-  			services:
-    			- docker
-    b.	The **dependencies** section contains instruction to set up the project dependencies. In the example below, *pip* is a python dependency management tool similar to *npm*.
+3. To use Docker Compose, we define all our services in a file entitled **docker-compose.yml**. Once that is done, we can astart everything with the single command:
+    ```
+    docker-compose up
+    ```
+4. When using Docker-Compose, linking is not required, because each service can communicate with each other service by name. As an example docker-compose.yml file:
+    ```yaml
+    version: '2'
+    services:
+      dockerapp:
+        build: .
+        ports:
+          - "5000:5000"
+        volumes:
+          - ./app:/app
+      redis:
+        image: redis:3.2.0
+    ```
+    **version**: The version should be '2.' This is the more up-to-date version, and allows us to forgo linking.
     
-    	dependencies:
-  			pre:
-   				- sudo pip install docker-compose
+    **services**: Each service should get an entry, which will contain instructions how to build and run the container for that service.
+    
+    **build**: The build property tells docker where to find the files for building the service container. Since the *docker-compose.yaml* file is kept in the root directory, we designate its value as ".".
+    
+    **ports**: This property allows us to list any ports of the container to expose to the external network. As we have seen before, the first value is the one that the network will have mapped to the second port number, which is the true port of the service (host port: container port).
+    
+    **volumes**: A volume is a designated directory in a container which is designated to persist data, independent of the container's life cycle. A typical use of *volumes* is to share data between the container and the host machine. The volume is defined in the format **host directory:container directory**. So, we should remove the *copy* instruction from the Dockerfile.  **This allows us to make changes in the host machine and see the results immediately, without having to rebuild the image.**
 
-   	c.	The **test** section contains commands for setting up tests. We use the **override** heading to include instructions that override CircleCI's default settings.
-   	
-   		test:
-  			override:
-    			- docker-compose up -d
-    			- docker-compose run dockerapp python test.py
+    **image**: Every service will need either an *image* or a *build* instruction. In our case, we have already build the image, so we can just refer to it.
 
-####Deployment to Docker from CircleCI
+    **No Linking**: Docker Compose allows each listed service to communicate directly with every other list service, so we do not need to do any more linking!
+    
+5. When we run the **docker-compose up** command, we can attach the *-d* command to run it in the background.		 
 
-1.	So far, we have used continuous integration to test our code every time changes are pushed to the GitHub repository. The next step is to get CircleCI to take our new image and update in Docker Hub, assuming our tests are all okay.
+6. To see the status of the containers being managed by docker-compose, we should run the following at the command line (we must be in the correct directory):
+    ```
+    docker-compose ps
+    ```
+7. We can also see information by the command:
+    ```
+    docker-compose logs
+    ```
+    **NOTE:** Append the container name to the above command to see the output for a specific container.
+	
+    **NOTE:** The above command just shows the logs through the present. To keep it open, use the **-f** flag to have the log output stay active. To turn it off, hit CTRL-C.
 
-2.	In order to connect to Docker Hub, we will need our Docker Hub account information.  We do not want to keep it insecurely in our file, so we can place it with CircleCI and then refer to it in our *circle.yml* file. To do this:
-
-	a.	Click on the "Build" tab on the left sidebar.
-	
-	b.	Click on the "settings" sprocket.
-	
-	c.	Click on "Environment Variables."
-	
-	d.	Enter necessary variables.  For example, for Docker Hub, we will need our e-mail address, our Docker Hub password, and our Docker Hub UserID.  We assign each variable a name and a value.  In the *circle.yml* file, we will refer to these variables in commands by the name, preceded by a "$" symbol.
-	
-	e.	In the *circle.yml* file, we should add a **deployment** section, as follows:
-	
-		deployment:
-  			hub:
-    			branch: /.*/
-    			commands:
-      				- docker login -e $DOCKER_HUB_EMAIL -u $DOCKER_HUB_USER_ID -p $DOCKER_HUB_PWD
-      				- docker tag dockerapp_dockerapp $DOCKER_HUB_USER_ID/dockerapp:$CIRCLE_SHA1
-      				- docker tag dockerapp_dockerapp $DOCKER_HUB_USER_ID/dockerapp:latest
-      				- docker push $DOCKER_HUB_USER_ID/dockerapp:$CIRCLE_SHA1
-      				- docker push $DOCKER_HUB_USER_ID/dockerapp:latest
-
-	In the above code, we have the *hub* section to note we are deploying to Docker Hub. Then, the *branch* section specifies the branches that we wish to cause a deployment. For example, we may want to set up /^\d+\.\d+\.\d+$/ to only push when we have a 1.1.1 type format, but not 1.1.1-dev.  We then have a **commands** section where we tell CircleCI what to do.
-	
-3.	The commands are as follows:
-
-	a.  The first command simply logs in to Docker Hub using your e-mail, userID, and password, as set in the Environment Variables of CircleCI.
-	
-		docker login -e $DOCKER_HUB_EMAIL -u $DOCKER_HUB_USER_ID -p $DOCKER_HUB_PWD
+8. To stop all the running containers, without removing them:
+    ```
+    docker-compose stop
+    ```
 		
-	b.	The second command tags the docker image.  First, after the tag command we specify the image name on the local box, then specify the image name on DockerHub, which will be our userID/appName:version. The version will be specified by the *CircleCI* built-in variable **CIRCLE_SHA1**, which is the GitHub hash string for the branch commit.
+9. We can restart these containers again with either:
+    ```
+    docker-compose start
+    docker-compose up
+    ```
+
+10. To get rid of all containers in the docker-compose file:
+    ```
+    docker-compose rm
+    ```
+
+11. If we make a modification to our code (such as in the Dockerfile), we cannot use *docker-compose up* to rebuild the container with the changes, because Docker will see the image already exists. To force a rebuild, use the command:
+    ```
+    docker-compose build
+    ```
+
+## Docker Networking
+
+### Introduction
+1. There are four types of Docker Networks:
+
+    a. Closed (None) Network
+    
+    
+    b. Bridge Network
+    
+    c. Host Network
+    
+    d. Overlay Network
+
+2. To see what Docker networks exist on our machine, type in the following at the command line:
+    ```
+    docker network ls
+    ```
+    This should list at least three networks, which are installed with Docker initially, one each for **bridge**, **host**, and **none**.
+
+### None Network
+1. This network has no access to the outside world.
+
+
+
+## Testing with Docker
+
+### Introduction
+1. Docker containers make a great environment for testing, as they can be spun up very quickly and run as an isolated environment.
+
+### Example (From Lectures)
+1. The example in this section is based on the lectures, and the code can be found in the *lookup* app in the *apps* directory of this github repository. Don't worry too much about the actual code, it is in python; just get the general idea as to how the tests are set up.
+
+2. In the example app, we have a tests file, **test.py**, contained in the app directory of our app. It has a setUp and then has two tests, one for saving values to the key store, and the other for checking the values.
+
+3. To begin, we will start up the app with the command:
+    ```
+    docker-compose up -d
+    ```
+    Remember, this will start up two containers for us, the redis container, and the dockerapp container.
+    
+4. Next, we will use a new Docker Compose command, **docker-compose run**. This will take the name of the service and run a command **one time** against that service.
+    ```
+    docker-compose run dockerapp python test.py
+    ```
+    Note that **Dockerfile** contains a default command (in this case, "python app.py"), but the **run** command will override that.
+    
+5. Note that in this case, we are placing all our tests into our main Docker image. This can increase reliability; however, it also increases the size of our image.
+
+### Example (Node / Mocha or Jasmine)
+
+## Continuous Integration (CI) with Docker
+
+### Introduction
+1. Once we are writing tests for our code, we can create a **continuous integration (CI)** process for our development. To do so, we will connect accounts in *GitHub*, *CircleCI*.
+
+2. *Continuous Integration* is a software engineering practice in which discrete changes are immediately tested and reported as they are added to the main code base branch. The goal is to provide rapid feedback, so bugs can be identified and corrected as quickly as possible.
+
+3. In a CI process, when a developer commits changes to a **version control system (VCS)** such as GitHub or BitBucket, the code goes to a Continuous Integration server, which is always listening for changes.  Upon detecting a change in the repository, it builds a new version, runs unit tests, and archives.  It may also push the new version to the staging or production server.
+
+4. We will create a CI pipeline using Github and the CircleCI continuous integration server.
+
+### Setting Up
+1. First, we must set up a *GitHub* account and *CircleCI* account.
+
+2. Next, go to *https://circleci.com*.  If we log in with our GitHub account, we will be connected to our GitHub repositories and can choose one for *CircleCI* to run on.
+
+    a. Click on the "Add Projects" button on the left side of the page, and you will see the GitHub repositories of which you are a member. If there are more than one, choose the appropriate one, then choose the project you wish for CircleCI to follow (more than one costs $).
 	
-		docker tag dockerapp_dockerapp $DOCKER_HUB_USER_ID/dockerapp:$CIRCLE_SHA1
-		
-	c.	In addition, we tag our branch with the **latest** version tag, so that the most recent version overwrites any prior *latest* version.
+    b. Click on the "Build Project" button of the repository you want to follow. Now, whenever commits are pushed to that repository, *CircleCI* will run through its paces on that branch.
+
+3. In the root directory of our Git repository, we must set up a *circle.yml* file. This is where the instructions are to CircleCI telling it what to do when a change is detected in the repository.
+
+7. These are some of the parts of the *yml* file:
+
+    a. The **machine** heading identifies the CircleCI server and services:
+    ```
+    machine:
+      pre:
+      - curl -ssl https://s3.amazonaws.com/circle-downloads/install-circleci-docker.sh | bash -s -- 1.10.0
+      services:
+        - docker
+    ```
+    b.	The **dependencies** section contains instruction to set up the project dependencies. In the example below, *pip* is a python dependency management tool similar to *npm*.
+    ```
+    dependencies:
+      pre:
+        - sudo pip install docker-compose
+    ```
+    c. The **test** section contains commands for setting up tests. We use the **override** heading to include instructions that override CircleCI's default settings.
+    ```
+    test:
+      override:
+        - docker-compose up -d
+        - docker-compose run dockerapp python test.py
+    ```
+
+### Deployment to Docker from CircleCI
+1. So far, we have used continuous integration to test our code every time changes are pushed to the GitHub repository. The next step is to get CircleCI to take our new image and update in Docker Hub, assuming our tests are all okay.
+
+2. In order to connect to Docker Hub, we will need our Docker Hub account information.  We do not want to keep it insecurely in our file, so we can place it with CircleCI and then refer to it by variale name in our *circle.yml* file. To do this:
+
+    a. Click on the "Build" tab on the lef sidebar.
+
+    b. Click on the "settings" sprocket.
+    
+    c.	Click on "Environment Variables."
 	
-		docker tag dockerapp_dockerapp $DOCKER_HUB_USER_ID/dockerapp:latest
-		
-	d.	Finally, we push our new versions up to Docker Hub:
+    d. Enter the necessary variables. For example, for Docker Hub, we will need our e-mail address, our Docker Hub password, and our Docker Hub UserID.  We assign each variable a name and a value.  In the *circle.yml* file, we will refer to these variables in commands by the name, preceded by a "$" symbol.
+    
+    e. In the *circle.yml* file, we should add a **deployment** section, along the lines of:
+    ```yaml
+    deployment:
+      hub:
+        branch: /.*/
+        commands:
+          - docker login -e $DOCKER_HUB_EMAIL -u $DOCKER_HUB_USER_ID -p $DOCKER_HUB_PWD
+          - docker tag dockerapp_dockerapp $DOCKER_HUB_USER_ID/dockerapp:$CIRCLE_SHA1
+          - docker tag dockerapp_dockerapp $DOCKER_HUB_USER_ID/dockerapp:latest
+          - docker push $DOCKER_HUB_USER_ID/dockerapp:$CIRCLE_SHA1
+          - docker push $DOCKER_HUB_USER_ID/dockerapp:latest
+    ```
+    **hub**: In the above code, the *hub* section indicates that we are deploying to Docker Hub.
+    
+    **branch**: The *branch* section specifies the branches that we wish to cause a deployment. For example, we may want to set up /^\d+\.\d+\.\d+$/ to only push when we have a 1.1.1 type format, but not 1.1.1-dev.
+    
+    **commands**: This section tells CircleCI what we wish for it to do. They are discussed below.
+    
+3. The **commands** are as follows:
+
+    a. The first command simply logs in to Docker Hub using your e-mail, userID, and password, as set in the Environment Variables of CircleCI.
+    ```
+    docker login -e $DOCKER_HUB_EMAIL -u $DOCKER_HUB_USER_ID -p $DOCKER_HUB_PWD
+    ```
+
+    b. The second command tags the docker image. First, after the tag command we specify the image name on the local box, then specify the image name on DockerHub, which will be our userID/appName:version. The version will be specified by the *CircleCI* built-in variable **CIRCLE\_SHA1**, which is the GitHub hash string for the branch commit.
+    ```
+    docker tag dockerapp_dockerapp $DOCKER_HUB_USER_ID/dockerapp:$CIRCLE_SHA1
+    ```
+
+    c. In addition, we tag our branch with the **latest** version tag, so that the most recent version overwrites any prior *latest* version.
+    ```
+    docker tag dockerapp_dockerapp $DOCKER_HUB_USER_ID/dockerapp:latest
+    ```
+
+    d. Finally, we push our new versions up to Docker Hub:
+    ```
+    docker push $DOCKER_HUB_USER_ID/dockerapp:$CIRCLE_SHA1
+    docker push $DOCKER_HUB_USER_ID/dockerapp:latest
+
+## Deploying Docker in Production
+
+### Introduction
+1. In this section, we will run through an example of setting up a Docker containerized application in the Digital Ocean hosting service.
+
+2. First, note that Docker is still a new service, and there may be some reluctance to use Docker in production until it is more tried and tested. However, a number of major tech companies are already using Docker in production, and supporting tools are rapidly being developed, which should make it an easier sell in the near future.
+
+3. Currently, the predominant means of using Docker in production is to run Docker containers inside of Virtual Machines, to minimize security risks.  Also, without the separation, one container could use up a disproportionate amount of shared kernel resources and starve out the other containerized applications. Many popular services (such as Amazon EC2 and Google) are using VMs under the hood.
+
+4. **Docker Machine** is a tool to set up new VMs and run Docker containers in them. It can do the following: 
+
+    a. Provision new virtual machines,
 	
-		docker push $DOCKER_HUB_USER_ID/dockerapp:$CIRCLE_SHA1
-      	docker push $DOCKER_HUB_USER_ID/dockerapp:latest
-      	
-###Deploying Docker in Production
-
-1.	In this section, we will run through an example of setting up a Docker containerized application in the Digital Ocean hosting service.
-
-2.	First, note that Docker is still a new service, and there may be some reluctance to use Docker in production until it is more tried and tested. However, a number of major tech companies are already using Docker in production, and supporting tools are rapidly being developed, which should make it an easier sell in the near future.
-
-3.	Currently, the predominant means of using Docker in production is to run Docker containers inside of Virtual Machines, to minimize security risks.  Also, without the separation, one container could use up a disproportionate amount of shared kernel resources and starve out the other containerized applications. Many popular services (such as Amazon EC2 and Google) are using VMs under the hood.
-
-4.	**Docker Machine** is a tool to set up new VMs and run Docker containers in them. It can do the following: 
-
-	a.	Provision new virtual machines,
+    b. Install the Docker engine in the VM,
 	
-	b.	Install the Docker engine in the VM,
+    c. Configure the Docker client to interact with the Docker engine,
 	
-	c.	Configure the Docker client to interact with the Docker engine,
+    d. Provides drivers for most of the popular cloud providers, such as AWS or Digital Ocean.
+
+5. For hosting on a Windows or Mac machine, we can use Oracle VirtualBox to run virtual machines.
+
+6. One big change in hosting in the cloud from hosting on our local machine is that we cannot simply map our *app* directory, but will need to copy the app directory into our container.  Below are specific steps to take to get up and running.
+
+### What to Do
+1. First, we need to check the branch(es) we designate in the *circle.yml* file, to make sure only the branch we want to publish is actually published.
+
+2. In the *docker-compose.yml* file, remove any *volumes* entry from the application service. It will probably be along the lines of:
+    ```
+    volumes:
+      - ./app:/app
+    ```
+
+
+3. In the *Dockerfile*, copy the app directory from localhost to the image.  Add the following command:
+    ```
+    COPY app /app
+    ```
+
+4. After making these changes, push them to GitHub, which will trigger a build of the app. Make sure this new image is published on Docker Hub.
+
+
+5. Set up an account with Digital Ocean. It is similar to AWS, but easier to work with.
+
+### Setting Up on Digital Ocean
+1. After establishing a Digital Ocean account, the first step is to acquire a **Personal Access Token**.  To do so:
+
+    a. Click on "API" in the top menu bar.
 	
-	d.	Provides drivers for most of the popular cloud providers, such as AWS or Digital Ocean.  
+    b. Under the "Tokens" tab, click on "Generate New Token".
 	
-5.	For hosting on a Windows or Mac machine, we can use Oracle VirtualBox to run virtual machines.
+    c. Click on "Copy to Clipboard" and save the token in a safe place for later use.
 
-6.	One big change in hosting in the cloud from hosting on our local machine is that we cannot simply map our *app* directory, but will need to copy the app directory into our container.  Below are specific steps to take to get up and running.
+2. Check to make sure **Docker-Machine** is present, by entering at the command line:
+    ```
+    docker-machine ls
+    ```
+    If *docker-machine* is correctly installed, then it will show a list of virtual machines.  If not, then go to Docker.com and install docker-machine. 
 
-####What to Do
+3. To create a docker-machine VM, use the following command:
+    ```
+    docker-machine create --driver digitalocean 
+      --digitalocean-access-token [personal access token]
+      [name of the VM]
+    ```
+    This can take a few minutes, for Docker to provision the Virtual Machine.
 
-1.	First, we need to check the branch(es) we designate in the *circle.yml* file, to make sure only the branch we want to publish is actually published.
-
-2.	In the *docker-compose.yml* file, remove any *volumes* entry from the application service.  It will probably be along the lines of:
-
-		volumes:
-		  - ./app:/app
-
-3.	In the *Dockerfile*, copy the app directory from localhost to the image.  Add the following command:
-
-		COPY app /app
-		
-4.	After making these changes, push them to GitHub, which will trigger a build of the app.  Make sure this new image is published on Docker Hub.
-
-5.	Set up an account with Digital Ocean. It is similar to AWS, but easier to work with.
-
-###Setting Up on Digital Ocean
-
-1.	After establishing a Digital Ocean account, the first step is to acquire a **Personal Access Token**.  To do so:
-
-	a.	Click on "API" in the top menu bar.
-	
-	b.	Under the "Tokens" tab, click on "Generate New Token".
-	
-	c.	Click on "Copy to Clipboard" and save the token in a safe place for later use.
-	
-2.	Check to make sure **Docker-Machine** is present, by entering at the command line:
-
-		docker-machine ls
-		
-	If *docker-machine* is correctly installed, then it will show a list of virtual machines.  If not, then go to Docker.com and install docker-machine.
-
-3.	To create a docker-machine VM, use the following command:
-
-		docker-machine create --driver digitalocean --digitalocean-access-token [personal access token]	[name of the VM]
-		
 4. To display the commands needed to set up the Docker client, enter the following at the command line:
+    ```
+    docker-machine env [name of the VM]
+ 
 
-		docker-machine env [name of the VM]
+5. Run the suggested command to configure the shell:
+    ```
+    eval $(docker-machine env [VM name]
+    ```
+
+6. We can then get information about the new VM by typinf at the command line:
+    ```
+    docker info
+    ```
 		
-5. Run the suggested command to configure the shell ("eval $(docker-machine env [VM name]")
-
-6.	We can then get information about the new VM by typinf at the command line:
-
-		docker info
-		
-7.	Next, copy the *docker-compose.yml* file into a new root-level file, **prod.yml**.  Then change our application service *build* instruction to an *image* instruction, citing our Docker Hub image as the source of the application image.  For example, change:
+7. Ncommext, copy the *docker-compose.yml* file into a new root-level file, **prod.yml**.  Then change our application service *build* instruction to an *image* instruction, citing our Docker Hub image as the source of the application image.  For example, change:
 
 		//docker-compose.yml
 		version: '2'
@@ -792,6 +845,27 @@ Rest here
 
   			redis:
     			image: redis:3.2.0
+    
+    
+::: danger
+Rest here
+::::
+
+
+
+
+
+
+
+
+
+
+
+		
+
+
+
+
     			
 8.	To deploy our app, enter at the command line:
 
@@ -829,3 +903,40 @@ Rest here
 
 	Obviously, in this simple example we end up with more code than we would have had without using *extends*, but in more developed situations it can prevent a lot of duplicated code.
 	
+###Testing		
+
+
+1.	First, in the container, add the following line to the Dockerfile to add jasmine-node testing to our application:
+
+		RUN npm install -g jasmine-node
+		
+2.	In the application, create a *spec* folder and files containing the tests.
+
+3.	Make sure in the *package.json* file that we set our testing script:
+
+		"scripts": {
+			"test": "jasmine-node spec",
+			"start": "node index.js"
+		}
+	
+4.	Add a file to our project, *docker-compose.test.yml*, with the following content:
+
+		version: '2'
+		  services:
+		    bazoom:
+		      build: .
+		      ports:
+		        - "3000:3000"
+		      entrypoint: jasmine-node spec
+		
+5.	Run the tests with the following:
+
+		docker-compose -f docker-compose.test.yml up --build
+		
+6.	And remove the container from the list of dormant containers with:
+
+		docker-compost -f docker-compose.test.yml down
+		
+7.	An alternative is to use another command in docker-compose, **docker-compose run**.  This command causes a one-time execution of a given command on a given service:
+
+		docker-compose run [service name] [command]
