@@ -110,7 +110,6 @@
 
 ## Some Basic Docker Commands
 
-
 ### Containers
 
 #### run
@@ -227,6 +226,16 @@
   ```
   docker image rm [image]
   ```
+#### deleting all dangling images
+1. Use the following command to delete all dangling images; i.e., an image that is not tagged and is not used by any container:
+  ```
+  docker image prune
+  ```
+2. Use the following command to delete all images that are not referenced by any existing container:
+  ```
+  docker image prune -a
+  ```
+  
 ## Docker Image Layers
 
 1. A **docker image** is made up of a series of read-only layers that represent file system differences.  For example, an image will have an underlaying layer, then will typically have a base layer of an operating system, such as Ubuntu or Debian, then might have other images built on top, such as Apache server and emacs (a text editor). Then, on top, there will be a writable *container*.
