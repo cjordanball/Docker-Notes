@@ -222,7 +222,11 @@
     ```
     docker history [image]
     ```
-
+#### deleting an image
+1. To delete a local docker image, run the following command from the terminal:
+  ```
+  docker image rm [image]
+  ```
 ## Docker Image Layers
 
 1. A **docker image** is made up of a series of read-only layers that represent file system differences.  For example, an image will have an underlaying layer, then will typically have a base layer of an operating system, such as Ubuntu or Debian, then might have other images built on top, such as Apache server and emacs (a text editor). Then, on top, there will be a writable *container*.
